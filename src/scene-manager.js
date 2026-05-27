@@ -127,18 +127,28 @@ export class SceneManager {
     this.camera.position.set(0, 1.5, 3);
     this.camera.lookAt(0, 0.5, 0);
 
+    // Visible grid for orientation
     const gridHelper = new THREE.GridHelper(10, 20, 0x444488, 0x222244);
     gridHelper.material.opacity = 0.5;
     gridHelper.material.transparent = true;
     this.scene.add(gridHelper);
 
+    // Invisible floor for raycasting (placement detection)
     const planeGeo = new THREE.PlaneGeometry(10, 10);
-    const planeMat = new THREE.ShadowMaterial({ opacity: 0.3 });
+    const planeMat = new THREE.MeshBasicMaterial({ visible: false });
     const floor = new THREE.Mesh(planeGeo, planeMat);
     floor.rotation.x = -Math.PI / 2;
-    floor.receiveShadow = true;
     floor.userData.isFloor = true;
     this.scene.add(floor);
+
+    // Shadow-receiving plane
+    const shadowPlaneGeo = new THREE.PlaneGeometry(10, 10);
+    const shadowPlaneMat = new THREE.ShadowMaterial({ opacity: 0.3 });
+    const shadowFloor = new THREE.Mesh(shadowPlaneGeo, shadowPlaneMat);
+    shadowFloor.rotation.x = -Math.PI / 2;
+    shadowFloor.position.y = 0.001;
+    shadowFloor.receiveShadow = true;
+    this.scene.add(shadowFloor);
 
     this.directionalLight.intensity = 1.5;
     this.ambientLight.intensity = 0.8;
