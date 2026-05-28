@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { SceneManager } from './scene-manager.js';
 import { ARSession } from './ar-session.js';
+import { CameraAR } from './camera-ar.js';
 import { ObjectPlacer } from './object-placer.js';
 import { GestureHandler } from './gesture-handler.js';
 import { AnimationManager } from './animation-manager.js';
@@ -13,6 +14,8 @@ class ARApp {
   constructor() {
     this.sceneManager = null;
     this.arSession = null;
+    this.cameraAR = null;
+    this.isCameraARMode = false;
     this.objectPlacer = null;
     this.gestureHandler = null;
     this.animationManager = null;
@@ -93,7 +96,16 @@ class ARApp {
     };
 
     this.gestureHandler.onEmptyTap = (screenPos) => {
-      if (this.isFallbackMode && this.objectPlacer.activeObjectType) {
+      if (this.isCameraARMode && this.objectPlacer.activeObjectType) {
+        const point = this.cameraAR.getPlacementPoint();
+        if (point) {
+          this.objectPlacer.placeObject(point, true);
+          this.uiController.updateObjectCount();
+          this.uiController.showToast('Nesne yerleştirildi');
+        } else {
+          this.uiController.showToast('Yerleştirmek için zemine doğru bakın');
+        }
+      } else if (this.isFallbackMode && this.objectPlacer.activeObjectType) {
         this.placeFallbackObject(screenPos);
       }
     };
@@ -131,27 +143,66 @@ class ARApp {
   async setupStartButtons() {
     const arStartBtn = document.getElementById('ar-start-btn');
     const fallbackBtn = document.getElementById('fallback-btn');
+    const note = document.getElementById('ar-mode-note');
 
     const arSupported = await checkARSupport();
+    const cameraSupported = CameraAR.isSupported();
 
-    if (!arSupported) {
-      arStartBtn.textContent = 'AR Desteklenmiyor';
+    if (arSupported) {
+      arStartBtn.textContent = 'AR Başlat';
+      if (note) note.textContent = 'Tam AR (WebXR) destekleniyor';
+    } else if (cameraSupported) {
+      arStartBtn.textContent = 'Kamerayı Başlat';
+      if (note) note.textContent = 'Kamera + sensör modu (WebXR yok)';
+    } else {
+      arStartBtn.textContent = 'Kamera Desteklenmiyor';
       arStartBtn.disabled = true;
+      if (note) note.textContent = 'Lütfen 3D Önizleme modunu kullanın';
     }
 
     arStartBtn.addEventListener('click', async () => {
-      if (!arSupported) return;
       try {
-        await this.startAR();
+        if (arSupported) {
+          await this.startAR();
+        } else if (cameraSupported) {
+          await this.startCameraAR();
+        }
       } catch (e) {
         console.error('AR start error:', e);
-        this.uiController.showToast('AR başlatılamadı: ' + e.message);
+        const msg = (e && e.name === 'NotAllowedError')
+          ? 'Kamera izni reddedildi. Tarayıcı ayarlarından izin verin.'
+          : 'Başlatılamadı: ' + (e.message || e);
+        this.uiController.showToast(msg);
       }
     });
 
     fallbackBtn.addEventListener('click', () => {
       this.startFallbackMode();
     });
+  }
+
+  async startCameraAR() {
+    this.cameraAR = new CameraAR(this.sceneManager);
+    await this.cameraAR.start();
+    this.isCameraARMode = true;
+
+    const renderer = this.sceneManager.getRenderer();
+    const scene = this.sceneManager.getScene();
+    const camera = this.sceneManager.getCamera();
+
+    this.uiController.showARUI();
+    this.uiController.setStatus(true);
+    this.uiController.showHint('Telefonu hareket ettirin, nesne seçin ve ekrana dokunarak yerleştirin');
+
+    const animate = () => {
+      if (!this.isCameraARMode) return;
+      requestAnimationFrame(animate);
+      const delta = this.clock.getDelta();
+      this.cameraAR.update();
+      this.animationManager.update(delta);
+      renderer.render(scene, camera);
+    };
+    animate();
   }
 
   async startAR() {
